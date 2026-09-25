@@ -47,3 +47,46 @@ pub(crate) fn save_account(conn: &mut diesel::SqliteConnection, account: &Accoun
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+
+    use super::*;
+
+    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
+    fn test_conn() -> SqliteConnection {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        conn
+    }
+
+    #[test]
+    fn saves_account() {
+        let mut conn = test_conn();
+        let account = Account::new(1, 700, 1);
+
+        save_account(&mut conn, &account).unwrap();
+
+        let (credits, debits) = accounts::table
+            .select((accounts::credits, accounts::debits))
+            .filter(accounts::id.eq(1u128.to_be_bytes().to_vec()))
+            .first::<(Vec<u8>, Vec<u8>)>(&mut conn)
+            .unwrap();
+
+        assert_eq!(credits, 0u128.to_be_bytes().to_vec());
+        assert_eq!(debits, 0u128.to_be_bytes().to_vec());
+    }
+
+    #[test]
+    fn rejects_duplicate_id() {
+        let mut conn = test_conn();
+        let account = Account::new(1, 700, 1);
+
+        save_account(&mut conn, &account).unwrap();
+        let result = save_account(&mut conn, &account);
+
+        assert!(result.is_err());
+    }
+}
