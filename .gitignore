@@ -1,1 +1,2 @@
 /rust-acc/accounting.db
+/rust-acc/migrations/.diesel_lock

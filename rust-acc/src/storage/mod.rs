@@ -1,0 +1,133 @@
+mod conversions;
+
+use anyhow::Result;
+use diesel::prelude::*;
+
+use crate::{
+    domain::{Account, AccountId, Timestamp},
+    schema::accounts,
+};
+use conversions::{AccountRow, to_i64, to_u128_bytes};
+
+pub(crate) fn save_account(conn: &mut diesel::SqliteConnection, account: &Account) -> Result<()> {
+    let new_account = AccountRow::try_from(account)?;
+
+    diesel::insert_into(accounts::table)
+        .values(&new_account)
+        .execute(conn)?;
+
+    Ok(())
+}
+
+pub(crate) fn list_accounts(conn: &mut diesel::SqliteConnection) -> Result<Vec<Account>> {
+    accounts::table
+        .load::<AccountRow>(conn)?
+        .into_iter()
+        .map(Account::try_from)
+        .collect()
+}
+
+pub(crate) fn deprecate_account(
+    conn: &mut diesel::SqliteConnection,
+    id: AccountId,
+    deprecated_at: Timestamp,
+) -> Result<()> {
+    let deprecated_at = to_i64(deprecated_at, "deprecated_at")?;
+
+    let rows = diesel::update(accounts::table.filter(accounts::id.eq(to_u128_bytes(id))))
+        .set(accounts::deprecated_at.eq(deprecated_at))
+        .execute(conn)?;
+
+    if rows == 0 {
+        anyhow::bail!("account {id} not found");
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+
+    use super::*;
+
+    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
+    fn test_conn() -> SqliteConnection {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        conn
+    }
+
+    #[test]
+    fn saves_account() {
+        let mut conn = test_conn();
+        let account = Account::new(1, 700, 1);
+
+        save_account(&mut conn, &account).unwrap();
+
+        let (credits, debits) = accounts::table
+            .select((accounts::credits, accounts::debits))
+            .filter(accounts::id.eq(1u128.to_be_bytes().to_vec()))
+            .first::<(Vec<u8>, Vec<u8>)>(&mut conn)
+            .unwrap();
+
+        assert_eq!(credits, 0u128.to_be_bytes().to_vec());
+        assert_eq!(debits, 0u128.to_be_bytes().to_vec());
+    }
+
+    #[test]
+    fn rejects_duplicate_id() {
+        let mut conn = test_conn();
+        let account = Account::new(1, 700, 1);
+
+        save_account(&mut conn, &account).unwrap();
+        let result = save_account(&mut conn, &account);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_ledger_and_code() {
+        let mut conn = test_conn();
+
+        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
+        let result = save_account(&mut conn, &Account::new(2, 700, 1));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lists_saved_accounts() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2)).unwrap();
+
+        let mut accounts = list_accounts(&mut conn).unwrap();
+        accounts.sort_by_key(|account| account.id);
+
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(accounts[0].id, 1);
+        assert_eq!(accounts[1].id, 2);
+    }
+
+    #[test]
+    fn deprecates_existing_account() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
+
+        deprecate_account(&mut conn, 1, 123).unwrap();
+
+        let accounts = list_accounts(&mut conn).unwrap();
+        assert_eq!(accounts[0].deprecated_at, Some(123));
+    }
+
+    #[test]
+    fn rejects_deprecating_unknown_account() {
+        let mut conn = test_conn();
+
+        let result = deprecate_account(&mut conn, 1, 123);
+
+        assert!(result.is_err());
+    }
+}

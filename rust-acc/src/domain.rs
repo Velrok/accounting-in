@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 type Id = u128;
 pub type GroupingId = u32;
 type Amount = u128;
-type Timestamp = u64;
+pub type Timestamp = u64;
 
 pub type AccountId = Id;
 pub type LedgerId = GroupingId;
@@ -53,7 +53,7 @@ pub struct Transfer {
     valid_from: Timestamp,
 }
 
-fn current_timestamp() -> Result<Timestamp> {
+pub(crate) fn current_timestamp() -> Result<Timestamp> {
     let nanos: u64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)?
         .as_nanos()
