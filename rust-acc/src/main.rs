@@ -1,4 +1,6 @@
+mod clock;
 mod domain;
+mod id_generators;
 mod ledger;
 mod schema;
 mod storage;
@@ -6,9 +8,9 @@ mod storage;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use diesel::prelude::*;
-use rand::RngExt;
 
 use domain::{Account, AccountId, GroupingId};
+use id_generators::generate_account_id;
 
 #[derive(Parser)]
 struct Cli {
@@ -40,13 +42,6 @@ enum AccountsCommand {
     Deprecate { account_id: AccountId },
 }
 
-fn generate_account_id() -> Result<AccountId> {
-    let nanos = domain::current_timestamp()?;
-    let random: u64 = rand::rng().random();
-
-    Ok(((nanos as u128) << 64) | random as u128)
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut conn = SqliteConnection::establish("accounting.db")?;
@@ -72,12 +67,13 @@ fn main() -> Result<()> {
             }
             AccountsCommand::Create { ledger, code } => {
                 let id = generate_account_id()?;
-                let account = Account::new(id, ledger, code);
+                let created_at = clock::current_timestamp()?;
+                let account = Account::new(id, ledger, code, created_at);
                 storage::save_account(&mut conn, &account)?;
                 println!("created account {id}");
             }
             AccountsCommand::Deprecate { account_id } => {
-                let now = domain::current_timestamp()?;
+                let now = clock::current_timestamp()?;
                 storage::deprecate_account(&mut conn, account_id, now)?;
                 println!("deprecated account {account_id}");
             }

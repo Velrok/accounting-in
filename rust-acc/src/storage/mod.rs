@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn saves_account() {
         let mut conn = test_conn();
-        let account = Account::new(1, 700, 1);
+        let account = Account::new(1, 700, 1, 100);
 
         save_account(&mut conn, &account).unwrap();
 
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_id() {
         let mut conn = test_conn();
-        let account = Account::new(1, 700, 1);
+        let account = Account::new(1, 700, 1, 100);
 
         save_account(&mut conn, &account).unwrap();
         let result = save_account(&mut conn, &account);
@@ -91,8 +91,8 @@ mod tests {
     fn rejects_duplicate_ledger_and_code() {
         let mut conn = test_conn();
 
-        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
-        let result = save_account(&mut conn, &Account::new(2, 700, 1));
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        let result = save_account(&mut conn, &Account::new(2, 700, 1, 100));
 
         assert!(result.is_err());
     }
@@ -100,8 +100,8 @@ mod tests {
     #[test]
     fn lists_saved_accounts() {
         let mut conn = test_conn();
-        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
-        save_account(&mut conn, &Account::new(2, 700, 2)).unwrap();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
 
         let mut accounts = list_accounts(&mut conn).unwrap();
         accounts.sort_by_key(|account| account.id);
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn deprecates_existing_account() {
         let mut conn = test_conn();
-        save_account(&mut conn, &Account::new(1, 700, 1)).unwrap();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
 
         deprecate_account(&mut conn, 1, 123).unwrap();
 

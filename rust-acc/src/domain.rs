@@ -1,6 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use anyhow::{Context, Result};
 type Id = u128;
 pub type GroupingId = u32;
 type Amount = u128;
@@ -22,15 +19,14 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn new(id: AccountId, ledger: LedgerId, code: GroupingId) -> Self {
+    pub fn new(id: AccountId, ledger: LedgerId, code: GroupingId, created_at: Timestamp) -> Self {
         Self {
             id,
             credits: 0,
             debits: 0,
             ledger,
             code,
-            created_at: current_timestamp()
-                .expect("If you are from the future increate precision to u128."),
+            created_at,
             deprecated_at: None,
         }
     }
@@ -51,13 +47,4 @@ pub struct Transfer {
 
     created_at: Timestamp,
     valid_from: Timestamp,
-}
-
-pub(crate) fn current_timestamp() -> Result<Timestamp> {
-    let nanos: u64 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_nanos()
-        .try_into()
-        .context("System time exceeds u64 nanosec range")?;
-    Ok(nanos)
 }

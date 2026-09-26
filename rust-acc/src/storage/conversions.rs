@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn account_row_round_trip() {
-        let mut account = Account::new(42, 700, 3);
+        let mut account = Account::new(42, 700, 3, 100);
         account.credits = 100;
         account.debits = 50;
         account.deprecated_at = Some(999);
