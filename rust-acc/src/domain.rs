@@ -1,7 +1,8 @@
 type Id = u128;
 pub type GroupingId = u32;
-type Amount = u128;
+pub type Amount = u128;
 pub type Timestamp = u64;
+pub type BundleId = u64;
 
 pub type AccountId = Id;
 pub type LedgerId = GroupingId;
@@ -32,19 +33,19 @@ impl Account {
     }
 }
 
-type TransferId = Id;
+pub type TransferId = Id;
 pub struct Transfer {
-    id: TransferId,
+    pub(crate) id: TransferId,
 
     // from -> to & how much
-    credit: AccountId,
-    debit: AccountId,
-    amount: Amount,
+    pub(crate) credit: AccountId,
+    pub(crate) debit: AccountId,
+    pub(crate) amount: Amount,
 
     // parent_transfer means it belongs to the parent
     // all or nothing for commits
-    parent_transfer: Option<TransferId>,
+    pub(crate) bundle: BundleId,
 
-    created_at: Timestamp,
-    valid_from: Timestamp,
+    pub(crate) created_at: Timestamp,
+    pub(crate) valid_from: Timestamp,
 }

@@ -11,3 +11,17 @@ diesel::table! {
         deprecated_at -> Nullable<BigInt>,
     }
 }
+
+diesel::table! {
+    transfers (id) {
+        id -> Binary,
+        credit -> Binary,
+        debit -> Binary,
+        amount -> Binary,
+        parent_transfer -> Nullable<Binary>,
+        created_at -> BigInt,
+        valid_from -> BigInt,
+    }
+}
+
+diesel::allow_tables_to_appear_in_same_query!(accounts, transfers,);
