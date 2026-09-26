@@ -1,0 +1,1 @@
+DROP INDEX accounts_ledger_code_unique;
