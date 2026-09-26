@@ -4,11 +4,11 @@ use anyhow::Result;
 use diesel::prelude::*;
 
 use crate::{
-    domain::{Account, AccountId, Timestamp},
+    domain::{Account, AccountId, Amount, Timestamp},
     ledger::TransfersBundle,
     schema::{accounts, transfers},
 };
-use conversions::{AccountRow, TransferRow, to_i64, to_u128_bytes};
+use conversions::{AccountRow, TransferRow, from_u128_bytes, to_i64, to_u128_bytes};
 
 pub(crate) fn establish(database_url: &str) -> Result<diesel::SqliteConnection> {
     let mut conn = diesel::SqliteConnection::establish(database_url)?;
@@ -56,14 +56,48 @@ pub(crate) fn commit_transaction_bundle(
     conn: &mut diesel::SqliteConnection,
     bundle: &TransfersBundle,
 ) -> Result<()> {
-    let rows = bundle
-        .transactions
-        .iter()
-        .map(TransferRow::try_from)
-        .collect::<Result<Vec<_>>>()?;
+    conn.transaction(|conn| {
+        let rows = bundle
+            .transactions
+            .iter()
+            .map(TransferRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
 
-    diesel::insert_into(transfers::table)
-        .values(&rows)
+        diesel::insert_into(transfers::table)
+            .values(&rows)
+            .execute(conn)?;
+
+        for transfer in &bundle.transactions {
+            adjust_balance(conn, transfer.credit, transfer.amount, 0)?;
+            adjust_balance(conn, transfer.debit, 0, transfer.amount)?;
+        }
+
+        Ok(())
+    })
+}
+
+fn adjust_balance(
+    conn: &mut diesel::SqliteConnection,
+    account_id: AccountId,
+    credit_delta: Amount,
+    debit_delta: Amount,
+) -> Result<()> {
+    let id_bytes = to_u128_bytes(account_id);
+    let (credits, debits) = accounts::table
+        .select((accounts::credits, accounts::debits))
+        .filter(accounts::id.eq(&id_bytes))
+        .first::<(Vec<u8>, Vec<u8>)>(conn)
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("account {account_id} not found"))?;
+
+    let new_credits = from_u128_bytes(credits, "credits")? + credit_delta;
+    let new_debits = from_u128_bytes(debits, "debits")? + debit_delta;
+
+    diesel::update(accounts::table.filter(accounts::id.eq(&id_bytes)))
+        .set((
+            accounts::credits.eq(to_u128_bytes(new_credits)),
+            accounts::debits.eq(to_u128_bytes(new_debits)),
+        ))
         .execute(conn)?;
 
     Ok(())
@@ -190,6 +224,49 @@ mod tests {
     }
 
     #[test]
+    fn updates_account_balances_on_commit() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![transfer(10, 1, 2, 50, 999)],
+        };
+
+        commit_transaction_bundle(&mut conn, &bundle).unwrap();
+
+        let accounts = list_accounts(&mut conn).unwrap();
+        let credit_account = accounts.iter().find(|a| a.id == 1).unwrap();
+        let debit_account = accounts.iter().find(|a| a.id == 2).unwrap();
+        assert_eq!(credit_account.credits, 50);
+        assert_eq!(debit_account.debits, 50);
+    }
+
+    #[test]
+    fn accumulates_balances_across_bundle_legs() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
+        save_account(&mut conn, &Account::new(3, 700, 3, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![
+                transfer(10, 1, 2, 50, 999),
+                transfer(11, 2, 3, 20, 999),
+            ],
+        };
+
+        commit_transaction_bundle(&mut conn, &bundle).unwrap();
+
+        let accounts = list_accounts(&mut conn).unwrap();
+        let account = |id| accounts.iter().find(|a| a.id == id).unwrap();
+        assert_eq!(account(1).credits, 50);
+        assert_eq!(account(1).debits, 0);
+        assert_eq!(account(2).credits, 20);
+        assert_eq!(account(2).debits, 50);
+        assert_eq!(account(3).credits, 0);
+        assert_eq!(account(3).debits, 20);
+    }
+
+    #[test]
     fn rejects_transfer_referencing_unknown_account() {
         let mut conn = test_conn();
         save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
@@ -216,5 +293,11 @@ mod tests {
         assert!(result.is_err());
         let count: i64 = transfers::table.count().get_result(&mut conn).unwrap();
         assert_eq!(count, 0);
+        let accounts = list_accounts(&mut conn).unwrap();
+        let account = |id| accounts.iter().find(|a| a.id == id).unwrap();
+        assert_eq!(account(1).credits, 0);
+        assert_eq!(account(1).debits, 0);
+        assert_eq!(account(2).credits, 0);
+        assert_eq!(account(2).debits, 0);
     }
 }

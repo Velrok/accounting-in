@@ -18,7 +18,7 @@ pub(super) fn to_u128_bytes(value: u128) -> Vec<u8> {
     value.to_be_bytes().to_vec()
 }
 
-fn from_u128_bytes(bytes: Vec<u8>, field: &'static str) -> Result<u128> {
+pub(super) fn from_u128_bytes(bytes: Vec<u8>, field: &'static str) -> Result<u128> {
     let array: [u8; 16] = bytes
         .try_into()
         .map_err(|_| anyhow::anyhow!("{field} is not 16 bytes"))?;
