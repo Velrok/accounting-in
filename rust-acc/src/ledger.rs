@@ -15,6 +15,17 @@ pub struct TransferRequest {
     amount: Amount,
 }
 
+impl TransferRequest {
+    pub fn new(credit: Account, debit: Account, amount: Amount) -> anyhow::Result<Self> {
+        Ok(Self {
+            id: id_generators::generate_transfer_id()?,
+            credit,
+            debit,
+            amount,
+        })
+    }
+}
+
 pub fn bundle_transfers(
     transfer_requests: &[TransferRequest],
     valid_from: Timestamp,
@@ -52,6 +63,17 @@ mod tests {
 
     fn account(id: u128, ledger: u32) -> Account {
         Account::new(id, ledger, 1, 0)
+    }
+
+    #[test]
+    fn new_builds_a_request_carrying_the_given_legs_and_amount() {
+        let request = TransferRequest::new(account(1, 700), account(2, 700), 50).unwrap();
+
+        let bundle = bundle_transfers(&[request], 0).unwrap();
+
+        assert_eq!(bundle.transactions[0].credit, 1);
+        assert_eq!(bundle.transactions[0].debit, 2);
+        assert_eq!(bundle.transactions[0].amount, 50);
     }
 
     #[test]

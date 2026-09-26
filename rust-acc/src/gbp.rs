@@ -12,6 +12,10 @@ impl GBP {
     pub fn new(gbp: f64) -> Self {
         Self((gbp * PRECISION) as i128)
     }
+
+    pub fn as_raw(&self) -> i128 {
+        self.0
+    }
 }
 
 impl From<&Account> for GBP {
@@ -61,6 +65,11 @@ impl Div<i128> for GBP {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn as_raw_returns_the_scaled_internal_value() {
+        assert_eq!(GBP::new(1.5).as_raw(), 15_000_000_000);
+    }
 
     #[test]
     fn new_scales_by_10_pow_10() {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use diesel::prelude::*;
 
 use crate::{
-    domain::{Account, AccountId, Amount, Timestamp},
+    domain::{Account, AccountId, Amount, LedgerId, Timestamp, Transfer},
     ledger::TransfersBundle,
     schema::{accounts, transfers},
 };
@@ -24,6 +24,15 @@ pub(crate) fn save_account(conn: &mut diesel::SqliteConnection, account: &Accoun
         .execute(conn)?;
 
     Ok(())
+}
+
+pub(crate) fn get_account(conn: &mut diesel::SqliteConnection, id: AccountId) -> Result<Account> {
+    accounts::table
+        .filter(accounts::id.eq(to_u128_bytes(id)))
+        .first::<AccountRow>(conn)
+        .optional()?
+        .ok_or_else(|| anyhow::anyhow!("account {id} not found"))
+        .and_then(Account::try_from)
 }
 
 pub(crate) fn list_accounts(conn: &mut diesel::SqliteConnection) -> Result<Vec<Account>> {
@@ -74,6 +83,20 @@ pub(crate) fn commit_transaction_bundle(
 
         Ok(())
     })
+}
+
+pub(crate) fn list_transfers_for_ledger(
+    conn: &mut diesel::SqliteConnection,
+    ledger: LedgerId,
+) -> Result<Vec<Transfer>> {
+    transfers::table
+        .inner_join(accounts::table.on(transfers::credit.eq(accounts::id)))
+        .filter(accounts::ledger.eq(ledger as i32))
+        .select(transfers::all_columns)
+        .load::<TransferRow>(conn)?
+        .into_iter()
+        .map(Transfer::try_from)
+        .collect()
 }
 
 fn adjust_balance(
@@ -157,6 +180,26 @@ mod tests {
     }
 
     #[test]
+    fn gets_saved_account_by_id() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+
+        let account = get_account(&mut conn, 1).unwrap();
+
+        assert_eq!(account.id, 1);
+        assert_eq!(account.ledger, 700);
+    }
+
+    #[test]
+    fn rejects_getting_unknown_account() {
+        let mut conn = test_conn();
+
+        let result = get_account(&mut conn, 1);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn lists_saved_accounts() {
         let mut conn = test_conn();
         save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
@@ -221,6 +264,25 @@ mod tests {
 
         assert_eq!(credit, to_u128_bytes(1));
         assert_eq!(debit, to_u128_bytes(2));
+    }
+
+    #[test]
+    fn lists_transfers_for_ledger() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
+        save_account(&mut conn, &Account::new(3, 800, 1, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![transfer(10, 1, 2, 50, 999)],
+        };
+        commit_transaction_bundle(&mut conn, &bundle).unwrap();
+
+        let ledger_700 = list_transfers_for_ledger(&mut conn, 700).unwrap();
+        let ledger_800 = list_transfers_for_ledger(&mut conn, 800).unwrap();
+
+        assert_eq!(ledger_700.len(), 1);
+        assert_eq!(ledger_700[0].id, 10);
+        assert_eq!(ledger_800.len(), 0);
     }
 
     #[test]
