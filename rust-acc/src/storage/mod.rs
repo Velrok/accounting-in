@@ -5,9 +5,16 @@ use diesel::prelude::*;
 
 use crate::{
     domain::{Account, AccountId, Timestamp},
-    schema::accounts,
+    ledger::TransfersBundle,
+    schema::{accounts, transfers},
 };
-use conversions::{AccountRow, to_i64, to_u128_bytes};
+use conversions::{AccountRow, TransferRow, to_i64, to_u128_bytes};
+
+pub(crate) fn establish(database_url: &str) -> Result<diesel::SqliteConnection> {
+    let mut conn = diesel::SqliteConnection::establish(database_url)?;
+    diesel::sql_query("PRAGMA foreign_keys = ON").execute(&mut conn)?;
+    Ok(conn)
+}
 
 pub(crate) fn save_account(conn: &mut diesel::SqliteConnection, account: &Account) -> Result<()> {
     let new_account = AccountRow::try_from(account)?;
@@ -45,16 +52,34 @@ pub(crate) fn deprecate_account(
     Ok(())
 }
 
+pub(crate) fn commit_transaction_bundle(
+    conn: &mut diesel::SqliteConnection,
+    bundle: &TransfersBundle,
+) -> Result<()> {
+    let rows = bundle
+        .transactions
+        .iter()
+        .map(TransferRow::try_from)
+        .collect::<Result<Vec<_>>>()?;
+
+    diesel::insert_into(transfers::table)
+        .values(&rows)
+        .execute(conn)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
     use super::*;
+    use crate::domain::Transfer;
 
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
     fn test_conn() -> SqliteConnection {
-        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        let mut conn = establish(":memory:").unwrap();
         conn.run_pending_migrations(MIGRATIONS).unwrap();
         conn
     }
@@ -129,5 +154,67 @@ mod tests {
         let result = deprecate_account(&mut conn, 1, 123);
 
         assert!(result.is_err());
+    }
+
+    fn transfer(id: u128, credit: u128, debit: u128, amount: u128, bundle: u64) -> Transfer {
+        Transfer {
+            id,
+            credit,
+            debit,
+            amount,
+            bundle,
+            created_at: 100,
+            valid_from: 100,
+        }
+    }
+
+    #[test]
+    fn commits_transaction_bundle() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![transfer(10, 1, 2, 50, 999)],
+        };
+
+        commit_transaction_bundle(&mut conn, &bundle).unwrap();
+
+        let (credit, debit) = transfers::table
+            .select((transfers::credit, transfers::debit))
+            .filter(transfers::id.eq(to_u128_bytes(10)))
+            .first::<(Vec<u8>, Vec<u8>)>(&mut conn)
+            .unwrap();
+
+        assert_eq!(credit, to_u128_bytes(1));
+        assert_eq!(debit, to_u128_bytes(2));
+    }
+
+    #[test]
+    fn rejects_transfer_referencing_unknown_account() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![transfer(10, 1, 2, 50, 999)],
+        };
+
+        let result = commit_transaction_bundle(&mut conn, &bundle);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn commit_is_all_or_nothing() {
+        let mut conn = test_conn();
+        save_account(&mut conn, &Account::new(1, 700, 1, 100)).unwrap();
+        save_account(&mut conn, &Account::new(2, 700, 2, 100)).unwrap();
+        let bundle = TransfersBundle {
+            transactions: vec![transfer(10, 1, 2, 50, 999), transfer(11, 1, 3, 50, 999)],
+        };
+
+        let result = commit_transaction_bundle(&mut conn, &bundle);
+
+        assert!(result.is_err());
+        let count: i64 = transfers::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(count, 0);
     }
 }

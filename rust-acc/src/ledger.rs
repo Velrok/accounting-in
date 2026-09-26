@@ -5,7 +5,7 @@ use crate::{
 };
 
 pub struct TransfersBundle {
-    transactions: Vec<Transfer>,
+    pub(crate) transactions: Vec<Transfer>,
 }
 
 pub struct TransferRequest {

@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use diesel::prelude::*;
 
 use crate::{
-    domain::{Account, Timestamp},
-    schema::accounts,
+    domain::{Account, Timestamp, Transfer},
+    schema::{accounts, transfers},
 };
 
 pub(super) fn to_i64(value: Timestamp, field: &'static str) -> Result<i64> {
@@ -23,6 +23,34 @@ fn from_u128_bytes(bytes: Vec<u8>, field: &'static str) -> Result<u128> {
         .try_into()
         .map_err(|_| anyhow::anyhow!("{field} is not 16 bytes"))?;
     Ok(u128::from_be_bytes(array))
+}
+
+#[derive(Insertable, Queryable)]
+#[diesel(table_name = transfers)]
+pub(super) struct TransferRow {
+    id: Vec<u8>,
+    credit: Vec<u8>,
+    debit: Vec<u8>,
+    amount: Vec<u8>,
+    bundle: i64,
+    created_at: i64,
+    valid_from: i64,
+}
+
+impl TryFrom<&Transfer> for TransferRow {
+    type Error = anyhow::Error;
+
+    fn try_from(transfer: &Transfer) -> Result<Self> {
+        Ok(Self {
+            id: to_u128_bytes(transfer.id),
+            credit: to_u128_bytes(transfer.credit),
+            debit: to_u128_bytes(transfer.debit),
+            amount: to_u128_bytes(transfer.amount),
+            bundle: to_i64(transfer.bundle, "bundle")?,
+            created_at: to_i64(transfer.created_at, "created_at")?,
+            valid_from: to_i64(transfer.valid_from, "valid_from")?,
+        })
+    }
 }
 
 #[derive(Insertable, Queryable)]

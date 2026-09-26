@@ -18,7 +18,7 @@ diesel::table! {
         credit -> Binary,
         debit -> Binary,
         amount -> Binary,
-        parent_transfer -> Nullable<Binary>,
+        bundle -> BigInt,
         created_at -> BigInt,
         valid_from -> BigInt,
     }
