@@ -4,11 +4,13 @@ mod id_generators;
 mod ledger;
 mod schema;
 mod storage;
+mod gbp;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use domain::{Account, AccountId, GroupingId};
+use gbp::GBP;
 use id_generators::generate_account_id;
 
 #[derive(Parser)]
@@ -51,12 +53,11 @@ fn main() -> Result<()> {
             AccountsCommand::List => {
                 for account in storage::list_accounts(&mut conn)? {
                     println!(
-                        "{}\tledger={}\tcode={}\tcredits={}\tdebits={}\tcreated_at={}\tdeprecated_at={}",
+                        "{}\tledger={}\tcode={}\tbalance={}\tcreated_at={}\tdeprecated_at={}",
                         account.id,
                         account.ledger,
                         account.code,
-                        account.credits,
-                        account.debits,
+                        GBP::from(&account),
                         account.created_at,
                         account
                             .deprecated_at

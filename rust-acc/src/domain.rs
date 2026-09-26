@@ -31,6 +31,10 @@ impl Account {
             deprecated_at: None,
         }
     }
+
+    pub fn debit_balance(&self) -> i128 {
+        self.debits as i128 - self.credits as i128
+    }
 }
 
 pub type TransferId = Id;
