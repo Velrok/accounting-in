@@ -53,6 +53,22 @@ impl TryFrom<&Transfer> for TransferRow {
     }
 }
 
+impl TryFrom<TransferRow> for Transfer {
+    type Error = anyhow::Error;
+
+    fn try_from(row: TransferRow) -> Result<Self> {
+        Ok(Self {
+            id: from_u128_bytes(row.id, "id")?,
+            credit: from_u128_bytes(row.credit, "credit")?,
+            debit: from_u128_bytes(row.debit, "debit")?,
+            amount: from_u128_bytes(row.amount, "amount")?,
+            bundle: from_i64(row.bundle, "bundle")?,
+            created_at: from_i64(row.created_at, "created_at")?,
+            valid_from: from_i64(row.valid_from, "valid_from")?,
+        })
+    }
+}
+
 #[derive(Insertable, Queryable)]
 #[diesel(table_name = accounts)]
 pub(super) struct AccountRow {
