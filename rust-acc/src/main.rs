@@ -5,9 +5,8 @@ mod ledger;
 mod schema;
 mod storage;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use diesel::prelude::*;
 
 use domain::{Account, AccountId, GroupingId};
 use id_generators::generate_account_id;
@@ -44,7 +43,8 @@ enum AccountsCommand {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut conn = SqliteConnection::establish("accounting.db")?;
+    let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+    let mut conn = storage::establish(&database_url)?;
 
     match cli.command {
         Command::Accounts { command } => match command {
